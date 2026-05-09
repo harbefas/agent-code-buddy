@@ -1,0 +1,68 @@
+#!/usr/bin/env python3
+import json
+import os
+import subprocess
+import sys
+
+BUDDY_ASK = os.environ.get("BUDDY_ASK", "/home/nfvelten/code/personal/agent-code-buddy/bin/buddy-ask")
+TIMEOUT = os.environ.get("BUDDY_TIMEOUT", "300")
+
+
+def compact_detail(event):
+    tool_input = event.get("tool_input", {})
+    if isinstance(tool_input, dict):
+        if "command" in tool_input:
+            return tool_input.get("command", "")
+        if "file_path" in tool_input:
+            return f"{tool_input.get('file_path')}\n\n{json.dumps(tool_input, ensure_ascii=False, indent=2)}"
+    return json.dumps(tool_input, ensure_ascii=False, indent=2)
+
+
+def output(decision, reason):
+    print(json.dumps({
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": decision,
+            "permissionDecisionReason": reason,
+        },
+        "suppressOutput": True,
+    }))
+
+
+def main():
+    try:
+        event = json.load(sys.stdin)
+    except Exception as exc:
+        output("deny", f"Agent Code Buddy could not parse hook input: {exc}")
+        return 0
+
+    tool = event.get("tool_name", "unknown")
+    cmd = [
+        BUDDY_ASK,
+        "--agent", "claude",
+        "--tool", tool,
+        "--title", f"Claude wants to use {tool}",
+        "--detail", compact_detail(event),
+        "--cwd", event.get("cwd", ""),
+        "--timeout", TIMEOUT,
+    ]
+    try:
+        result = subprocess.run(cmd, text=True, capture_output=True, timeout=float(TIMEOUT) + 20)
+    except Exception as exc:
+        output("ask", f"Agent Code Buddy unavailable, falling back to Claude permission UI: {exc}")
+        return 0
+
+    decision = result.stdout.strip().splitlines()[-1] if result.stdout.strip() else ""
+    if decision in {"allow_once", "always_allow"}:
+        output("allow", "Approved on Agent Code Buddy phone UI")
+    elif decision == "reject":
+        output("deny", "Rejected on Agent Code Buddy phone UI")
+    elif decision == "timeout":
+        output("deny", "Timed out waiting for Agent Code Buddy phone approval")
+    else:
+        output("ask", f"No usable Agent Code Buddy decision; stdout={result.stdout!r} stderr={result.stderr!r}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

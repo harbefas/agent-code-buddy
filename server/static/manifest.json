@@ -1,0 +1,25 @@
+{
+  "name": "Agent Code Buddy",
+  "short_name": "Code Buddy",
+  "description": "Approval console for coding agents",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#171717",
+  "theme_color": "#171717",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/mascot.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/mascot.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ],
+  "categories": ["developer", "productivity"],
+  "lang": "en"
+}

@@ -1,0 +1,26 @@
+# Build artifacts
+build/
+generated/
+*.class
+*.dex
+*.apk
+*.keystore
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+venv/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

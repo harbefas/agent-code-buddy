@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#171717">
+  <meta name="background-color" content="#171717">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Code Buddy">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="application-name" content="Code Buddy">
+  <meta name="msapplication-TileColor" content="#171717">
+  <title>Agent Code Buddy</title>
+  <link rel="icon" href="/mascot.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/mascot.png">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <pre id="buddy-sprite" class="ascii-buddy" aria-hidden="true"></pre>
+        <div>
+          <p class="eyebrow">Agent Code Buddy</p>
+          <h1>Approval Console</h1>
+          <p id="status">Connecting...</p>
+        </div>
+      </div>
+    </header>
+
+    <section id="pending-head" class="section-head">
+      <h2>Current Request</h2>
+    </section>
+    <section id="pending" class="panel"></section>
+    <section class="history">
+      <section class="section-head">
+        <h2>Recent Decisions</h2>
+      </section>
+      <div id="history"></div>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
+  </script>
+</body>
+</html>

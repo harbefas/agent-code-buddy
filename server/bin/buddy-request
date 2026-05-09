@@ -1,0 +1,57 @@
+#!/usr/bin/env python3
+import argparse
+import json
+import os
+import sys
+import urllib.error
+import urllib.request
+
+
+def post_json(url, payload, timeout=300):
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Ask Agent Code Buddy for approval")
+    parser.add_argument("--server", default=os.environ.get("BUDDY_URL", "http://127.0.0.1:8765"))
+    parser.add_argument("--agent", default=os.environ.get("BUDDY_AGENT", "agent"))
+    parser.add_argument("--tool", required=True)
+    parser.add_argument("--title")
+    parser.add_argument("--detail", default="")
+    parser.add_argument("--cwd", default=os.getcwd())
+    parser.add_argument("--timeout", type=float, default=300)
+    parser.add_argument("--json", action="store_true", help="Print raw decision JSON")
+    args = parser.parse_args()
+
+    payload = {
+        "agent": args.agent,
+        "tool": args.tool,
+        "title": args.title or args.tool,
+        "detail": args.detail,
+        "cwd": args.cwd,
+    }
+    try:
+        item = post_json(f"{args.server}/api/request", payload, timeout=10)
+        result = post_json(f"{args.server}/api/wait/{item['id']}", {"timeout": args.timeout}, timeout=args.timeout + 5)
+    except urllib.error.URLError as exc:
+        print(f"buddy-request: bridge unavailable: {exc}", file=sys.stderr)
+        return 2
+
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False))
+    else:
+        print(result.get("decision", ""))
+
+    decision = result.get("decision")
+    if decision in {"allow_once", "always_allow"}:
+        return 0
+    if decision == "reject":
+        return 1
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
