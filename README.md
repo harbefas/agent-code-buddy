@@ -6,20 +6,26 @@ Companion approval surface for local coding agents. Server runs on your PC, nati
 
 ```
 .
-├── server/      Python HTTP server + web UI
+├── server/      Python HTTP API server
 └── android/     Native Android app (APK)
 ```
 
 ## Server
 
-Runs on your PC. Receives tool-use approval requests from agents and serves a web UI + API.
+Runs on your PC. Receives tool-use approval requests from agents and exposes an API for the Android app.
 
 ```bash
 cd server
-python3 server.py --port 12345
+python3 server.py --port 8765
 ```
 
-The web UI is available at `http://<pc-ip>:12345`.
+### API Endpoints
+
+- `GET /api/state` — Returns current requests and stats
+- `POST /api/request` — Submit a new approval request
+- `POST /api/decide/<id>` — Approve/reject a request
+- `POST /api/wait/<id>` — Long-poll for a decision
+- `GET /health` — Health check
 
 ## Android App
 

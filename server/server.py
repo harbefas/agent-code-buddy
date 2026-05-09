@@ -5,11 +5,7 @@ import secrets
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
 from urllib.parse import urlparse
-
-ROOT = Path(__file__).resolve().parent
-STATIC = ROOT / "static"
 
 state_lock = threading.Lock()
 state = {
@@ -157,22 +153,6 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(200, public_state())
         if path == "/health":
             return self.send_json(200, {"ok": True})
-        if path == "/":
-            return self.serve_file(STATIC / "index.html", "text/html; charset=utf-8")
-        if path == "/app.js":
-            return self.serve_file(STATIC / "app.js", "text/javascript; charset=utf-8")
-        if path == "/style.css":
-            return self.serve_file(STATIC / "style.css", "text/css; charset=utf-8")
-        if path == "/mascot.svg":
-            return self.serve_file(STATIC / "mascot.svg", "image/svg+xml")
-        if path == "/mascot.png":
-            return self.serve_file(STATIC / "mascot.png", "image/png")
-        if path == "/manifest.json":
-            return self.serve_file(
-                STATIC / "manifest.json", "application/manifest+json; charset=utf-8"
-            )
-        if path == "/sw.js":
-            return self.serve_file(STATIC / "sw.js", "text/javascript; charset=utf-8")
         return self.send_json(404, {"error": "not_found"})
 
     def do_POST(self):
@@ -219,16 +199,6 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:
             return self.send_json(500, {"error": str(exc)})
         return self.send_json(404, {"error": "not_found"})
-
-    def serve_file(self, path, content_type):
-        if not path.exists():
-            return self.send_json(404, {"error": "not_found"})
-        body = path.read_bytes()
-        self.send_response(200)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
 
 
 def main():
