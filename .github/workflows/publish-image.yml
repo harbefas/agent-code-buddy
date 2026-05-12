@@ -25,3 +25,19 @@ jobs:
           context: server
           push: true
           tags: ghcr.io/harbefas/agent-code-buddy:latest
+
+  deploy:
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: tailscale/github-action@v2
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+      - uses: azure/setup-kubectl@v3
+      - name: Rollout restart
+        env:
+          KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
+        run: |
+          echo "$KUBECONFIG_B64" | base64 -d > /tmp/kc
+          kubectl --kubeconfig /tmp/kc --server https://100.106.2.127:6443 --insecure-skip-tls-verify \
+            rollout restart deployment/agent-code-buddy -n tools

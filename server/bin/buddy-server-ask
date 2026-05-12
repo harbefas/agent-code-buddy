@@ -1,0 +1,135 @@
+#!/usr/bin/env python3
+"""
+Sends an approval request to the persistent Agent Code Buddy server,
+notifies the phone via SSH, and waits for a decision.
+
+Replaces the one-shot buddy-ask for use with the k8s deployment.
+"""
+import argparse
+import json
+import os
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+DEFAULT_SERVER = "https://buddy.nicholas-velten.xyz"
+DEFAULT_CONFIG = Path.home() / ".config" / "agent-code-buddy" / "config.json"
+
+
+def load_config(path):
+    try:
+        with Path(path).open() as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
+
+
+def shell_quote(v):
+    return "'" + str(v).replace("'", "'\"'\"'") + "'"
+
+
+def post_json(url, payload, timeout=15):
+    data = json.dumps(payload).encode()
+    req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read())
+
+
+def notify_phone(item, server_url, phone_host, phone_port, phone_user, phone_key):
+    title = f"Code Buddy · {item['agent']}"
+    content = (item.get("detail") or item.get("title") or "Approval request").strip().splitlines()[0]
+    if len(content) > 120:
+        content = content[:117] + "..."
+    content = f"{item['tool']} · {content}"
+    request_id = item["id"]
+    target = f"{phone_user}@{phone_host}"
+    script = "\n".join([
+        "#!/data/data/com.termux/files/usr/bin/sh",
+        'export PATH="/data/data/com.termux/files/usr/bin:$PATH"',
+        f"SERVER={shell_quote(server_url)}",
+        f"REQUEST_ID={shell_quote(request_id)}",
+        f"TITLE={shell_quote(title)}",
+        f"CONTENT={shell_quote(content)}",
+        'am broadcast \\',
+        '  -n com.nfvelten.agentcodebuddy/.ApprovalReceiver \\',
+        '  -a com.nfvelten.agentcodebuddy.APPROVAL \\',
+        '  --es url "$SERVER" \\',
+        '  --es request_id "$REQUEST_ID" \\',
+        '  --es title "$TITLE" \\',
+        '  --es content "$CONTENT"',
+        "",
+    ])
+    key = os.path.expanduser(phone_key)
+    cmd = ["ssh", "-F", "/dev/null", "-i", key, "-o", "ConnectTimeout=8",
+           "-p", str(phone_port), target, "sh -s"]
+    result = subprocess.run(cmd, input=script, text=True, capture_output=True, timeout=15)
+    return result.returncode == 0
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Agent Code Buddy — persistent server client")
+    parser.add_argument("--config", default=os.environ.get("BUDDY_CONFIG", str(DEFAULT_CONFIG)))
+    parser.add_argument("--server", default=os.environ.get("BUDDY_SERVER_URL", DEFAULT_SERVER))
+    parser.add_argument("--agent", default=os.environ.get("BUDDY_AGENT", "agent"))
+    parser.add_argument("--tool", required=True)
+    parser.add_argument("--title")
+    parser.add_argument("--detail", default="")
+    parser.add_argument("--cwd", default=os.getcwd())
+    parser.add_argument("--timeout", type=float, default=300)
+    parser.add_argument("--phone-host", default=os.environ.get("BUDDY_PHONE_HOST"))
+    parser.add_argument("--phone-user", default=os.environ.get("BUDDY_PHONE_USER"))
+    parser.add_argument("--phone-port", type=int,
+                        default=int(os.environ.get("BUDDY_PHONE_PORT", "0") or "0"))
+    parser.add_argument("--phone-key", default=os.environ.get("BUDDY_PHONE_KEY"))
+    args = parser.parse_args()
+
+    config = load_config(args.config)
+    phone_host = args.phone_host or config.get("phone_host", "100.85.237.86")
+    phone_user = args.phone_user or config.get("phone_user", "u0_a186")
+    phone_port = args.phone_port or int(config.get("phone_port", 8022))
+    phone_key = args.phone_key or config.get("phone_key", "~/.ssh/termux_moto_g7")
+
+    payload = {
+        "agent": args.agent,
+        "tool": args.tool,
+        "title": args.title or args.tool,
+        "detail": args.detail,
+        "cwd": args.cwd,
+    }
+
+    try:
+        item = post_json(f"{args.server}/api/request", payload, timeout=10)
+    except Exception as e:
+        print(f"buddy-server-ask: server unavailable: {e}", file=sys.stderr)
+        print("timeout")
+        return 2
+
+    try:
+        notify_phone(item, args.server, phone_host, phone_port, phone_user, phone_key)
+    except Exception as e:
+        print(f"buddy-server-ask: phone notification failed (non-fatal): {e}", file=sys.stderr)
+
+    try:
+        result = post_json(
+            f"{args.server}/api/wait/{item['id']}",
+            {"timeout": args.timeout},
+            timeout=args.timeout + 10,
+        )
+    except Exception as e:
+        print(f"buddy-server-ask: wait failed: {e}", file=sys.stderr)
+        print("timeout")
+        return 2
+
+    decision = result.get("decision", "")
+    print(decision)
+    if decision in {"allow_once", "always_allow"}:
+        return 0
+    if decision == "reject":
+        return 1
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

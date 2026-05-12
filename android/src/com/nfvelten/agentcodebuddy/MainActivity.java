@@ -82,6 +82,12 @@ public class MainActivity extends Activity implements SensorEventListener {
     private boolean isShaking;
     private boolean isFaceDown;
     private String currentState;
+    private String prevState;
+    private String overrideState;
+    private long overrideUntil;
+    private long lastEasterEgg;
+    private int prevPendingCount;
+    private boolean isProcessing;
     private boolean menuOpen;
     private boolean isDark;
 
@@ -98,6 +104,8 @@ public class MainActivity extends Activity implements SensorEventListener {
         isDark = store.isDarkTheme(systemDark);
         applyThemeColors();
         currentState = "idle";
+        prevState = "idle";
+        lastEasterEgg = System.currentTimeMillis();
 
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 7);
@@ -211,33 +219,53 @@ public class MainActivity extends Activity implements SensorEventListener {
         List<String> entries = store.getEntries();
         boolean hasPending = !pending.isEmpty();
 
-        if (isFaceDown) currentState = "sleep";
-        else if (isShaking) currentState = "dizzy";
-        else if (System.currentTimeMillis() < store.getHeartUntil()) currentState = "heart";
-        else if (hasPending) currentState = "attention";
-        else currentState = "idle";
+        String newState;
+        if (isFaceDown) newState = "sleep";
+        else if (isShaking) newState = "dizzy";
+        else if (System.currentTimeMillis() < store.getHeartUntil()) newState = "heart";
+        else if (isProcessing) newState = "busy";
+        else if (hasPending) newState = "attention";
+        else newState = "idle";
+
+        if (!newState.equals(currentState)) {
+            prevState = currentState;
+            if ("sleep".equals(prevState) && "idle".equals(newState)) {
+                overrideState = "sleep_to_idle"; overrideUntil = System.currentTimeMillis() + 1200;
+            } else if ("idle".equals(prevState) && "busy".equals(newState)) {
+                overrideState = "idle_to_busy"; overrideUntil = System.currentTimeMillis() + 1200;
+            }
+        }
+        currentState = newState;
+
+        if (prevPendingCount > 0 && pending.isEmpty()) {
+            overrideState = "celebrate"; overrideUntil = System.currentTimeMillis() + 3000;
+        }
+        prevPendingCount = pending.size();
 
         int tokens = store.getTokens();
         int tokensToday = store.getTokensToday();
         int level = 1 + (tokensToday / 50000);
         statsView.setText(String.format(Locale.getDefault(), "lvl %-2d  |  %,d tok  |  %d pending", level, tokensToday, pending.size()));
 
+        String displayState = currentState;
+        if (overrideState != null && System.currentTimeMillis() < overrideUntil) {
+            displayState = overrideState;
+        } else {
+            overrideState = null;
+        }
+
         int statusColor;
-        if ("attention".equals(currentState)) statusColor = ORANGE;
-        else if ("heart".equals(currentState)) statusColor = PURPLE;
-        else if ("dizzy".equals(currentState)) statusColor = CYAN;
-        else if ("sleep".equals(currentState)) statusColor = TX_3;
-        else if ("celebrate".equals(currentState)) statusColor = YELLOW;
-        else if ("busy".equals(currentState)) statusColor = BLUE;
+        if ("attention".equals(displayState)) statusColor = ORANGE;
+        else if ("heart".equals(displayState)) statusColor = PURPLE;
+        else if ("dizzy".equals(displayState)) statusColor = CYAN;
+        else if ("sleep".equals(displayState) || "sleep_to_idle".equals(displayState)) statusColor = TX_3;
+        else if ("celebrate".equals(displayState) || "dance".equals(displayState)) statusColor = YELLOW;
+        else if ("busy".equals(displayState) || "idle_to_busy".equals(displayState)) statusColor = BLUE;
+        else if ("hiccup".equals(displayState) || "sneeze".equals(displayState) || "yawn".equals(displayState) || "peekaboo".equals(displayState)) statusColor = GREEN;
         else statusColor = GREEN;
         buddyView.setTextColor(statusColor);
-
-        long last = store.getLastUpdateTime();
-        if (last == 0) statusView.setText("Waiting for approvals");
-        else {
-            SimpleDateFormat sdf = new SimpleDateFormat("HH:mm", Locale.getDefault());
-            statusView.setText("last update: " + sdf.format(new Date(last)));
-        }
+        statusView.setText(RobotPet.getStatus(displayState));
+        statusView.setTextColor(statusColor);
 
         if (hasPending) {
             addSection("Current Request");
@@ -268,13 +296,42 @@ public class MainActivity extends Activity implements SensorEventListener {
             @Override
             public void run() {
                 if (buddyView != null) {
-                    String[][] frames = RobotPet.getFrames(currentState);
-                    if (frames.length > 0) {
-                        buddyView.setText(join(frames[frameIndex % frames.length]));
+                    String displayState = currentState;
+                    if (overrideState != null && System.currentTimeMillis() < overrideUntil) {
+                        displayState = overrideState;
+                    } else {
+                        overrideState = null;
                     }
+                    if ("idle".equals(displayState)) {
+                        long now = System.currentTimeMillis();
+                        if (now - lastEasterEgg > 12000) {
+                            int roll = (int)(Math.random() * 200);
+                            if (roll < 1) { overrideState = "dance"; overrideUntil = now + 2000; lastEasterEgg = now; }
+                            else if (roll < 3) { overrideState = "hiccup"; overrideUntil = now + 1000; lastEasterEgg = now; }
+                            else if (roll < 5) { overrideState = "sneeze"; overrideUntil = now + 1200; lastEasterEgg = now; }
+                            else if (roll < 7) { overrideState = "peekaboo"; overrideUntil = now + 1500; lastEasterEgg = now; }
+                            else if (roll < 10) { overrideState = "yawn"; overrideUntil = now + 1500; lastEasterEgg = now; }
+                            if (overrideState != null) displayState = overrideState;
+                        }
+                    }
+                    String[][] frames = RobotPet.getFrames(displayState);
+                    if (frames.length > 0) {
+                        int idx;
+                        if (RobotPet.isPingPong(displayState)) {
+                            int cycle = frames.length * 2 - 2;
+                            if (cycle < 1) cycle = 1;
+                            int pos = frameIndex % cycle;
+                            idx = pos < frames.length ? pos : cycle - pos;
+                        } else {
+                            idx = frameIndex % frames.length;
+                        }
+                        buddyView.setText(join(frames[idx]));
+                    }
+                    statusView.setText(RobotPet.getStatus(displayState));
                 }
                 frameIndex++;
-                int delay = "attention".equals(currentState) ? 260 : 320;
+                String displayState = overrideState != null && System.currentTimeMillis() < overrideUntil ? overrideState : currentState;
+                int delay = RobotPet.getDelay(displayState);
                 handler.postDelayed(this, delay);
             }
         };
@@ -430,6 +487,9 @@ public class MainActivity extends Activity implements SensorEventListener {
     }
 
     private void decide(final String requestId, final String decision) {
+        isProcessing = true;
+        refreshUi();
+        startAnimation();
         new Thread(new Runnable() {
             @Override public void run() {
                 try {
@@ -451,6 +511,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                     }
                 } catch (Exception e) {}
                 store.updateDecision(requestId, decision);
+                isProcessing = false;
                 handler.post(new Runnable() {
                     @Override public void run() { refreshUi(); startAnimation(); }
                 });
