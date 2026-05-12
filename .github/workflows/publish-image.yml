@@ -6,6 +6,7 @@ on:
     paths:
       - "server/server.py"
       - "server/Dockerfile"
+  workflow_dispatch:
 
 jobs:
   publish:
