@@ -66,4 +66,4 @@ adb shell am broadcast \
 
 ## License
 
-MIT
+GPL-3.0
